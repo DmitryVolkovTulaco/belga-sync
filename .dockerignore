@@ -1,0 +1,9 @@
+.git
+README.md
+.gitignore
+.env.example
+.editorconfig
+.prettierrc
+Dockerfile
+Jenkinsfile
+*.log
