@@ -98,11 +98,11 @@ export class BelgaSdk {
 
     // note: We're going to have tokens expire as we're using them (paginating long result sets).
     private async refreshAccessToken() {
-        console.log(chalk.yellow('Refreshed Belga access token!'));
-
         if (this.client) {
             this.token = await this.client.refresh(this.token!);
         }
+
+        console.log(chalk.yellow('Refreshed Belga access token!'));
     }
 }
 
