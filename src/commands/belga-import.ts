@@ -1,69 +1,28 @@
 import { Args } from 'vorpal';
-import { BelgaSdk, BelgaNewsObject } from '../util/belga';
+import { BelgaSdk } from '../util/belga';
 import PrezlySdk from '@prezly/sdk';
-import chalk from 'chalk';
-// todo: This can be cleaned up by exporting interfaces from `src/index.ts` and shipping .d.ts files in dist
-import { CoverageCreateRequest } from '@prezly/sdk/dist/Sdk/Coverage/types';
-
-let belga: null | BelgaSdk = null;
-let prezly: null | PrezlySdk = null;
+import { discoverClient } from '../util/oidc';
+import { BelgaImporter } from '../util/belga-importer';
 
 export async function belgaImport(args: Args): Promise<void> {
-    const newsroomId = parseInt(args.prezly_newsroom_id!);
+    const belgaOidcWellKnownUri = process.env.BELGA_OIDC_WELL_KNOWN_URI!;
+    const belgaApiBaseUri = process.env.BELGA_API_BASE_URI!;
+    const belgaBoardUuid = args.belga_board_uuid;
+    const prezlyNewsroomId = parseInt(args.prezly_newsroom_id);
+    const prezlyAccessToken = args.prezly_access_token;
+    const prezlyApiBaseUri = process.env.PREZLY_API_BASE_URI;
 
-    belga = new BelgaSdk(args.belga_client_id, args.belga_client_secret);
-    prezly = new PrezlySdk({
-        accessToken: args.prezly_access_token,
-        baseUrl: process.env.PREZLY_API_BASE_URI,
+    const belgaClient = await discoverClient(belgaOidcWellKnownUri, args.belga_client_id, args.belga_client_secret);
+
+    const belga = new BelgaSdk(belgaClient, belgaApiBaseUri);
+    const prezly = new PrezlySdk({
+        accessToken: prezlyAccessToken,
+        baseUrl: prezlyApiBaseUri,
     });
 
-    const query = {
-        board: args.belga_board_uuid,
-        order: '-publishDate',
-    };
+    const belgaImport = new BelgaImporter(belga, prezly);
 
-    await belga.chunk<BelgaNewsObject>('/newsobjects', query, async (chunk) => {
-        const syncs = chunk.data.map((newsObject) => syncBelgaNewsObjectToPrezlyCoverage(newsroomId, newsObject));
-
-        console.log(chalk.yellowBright(`Waiting for ${syncs.length} syncs to finish.`));
-        await Promise.all(syncs);
-    });
-}
-
-async function syncBelgaNewsObjectToPrezlyCoverage(newsroomId: number, simpleNewsObject: BelgaNewsObject) {
-    const newsObjectUuid = simpleNewsObject.uuid;
-
-    console.log(chalk.white(`Belga news object ${newsObjectUuid} (${simpleNewsObject.title}).`));
-
-    const existing = await prezly!.coverage.list({
-        jsonQuery: JSON.stringify({
-            external_reference_id: {
-                $in: [newsObjectUuid],
-            },
-        }),
-    });
-
-    if (existing.coverage.length) {
-        console.log(
-            chalk.gray(`Belga news object ${newsObjectUuid} (${simpleNewsObject.title}) has already been synced.`),
-        );
-
-        return;
-    }
-
-    const newCoverage: CoverageCreateRequest = {
-        newsroom: newsroomId,
-        external_reference_id: newsObjectUuid,
-        note_content: { text: `bodymassage!!` },
-    };
-
-    try {
-        await prezly!.coverage.create(newCoverage);
-    } catch (error) {
-        console.log(error);
-    }
-
-    console.log(chalk.greenBright(`Belga news object ${newsObjectUuid} (${simpleNewsObject.title}) synced!`));
+    await belgaImport.importNewsObjects(belgaBoardUuid, prezlyNewsroomId);
 }
 
 declare module 'vorpal/index' {
@@ -72,6 +31,6 @@ declare module 'vorpal/index' {
         belga_client_secret: string;
         belga_board_uuid: string;
         prezly_access_token: string;
-        prezly_newsroom_id?: string;
+        prezly_newsroom_id: string;
     }
 }

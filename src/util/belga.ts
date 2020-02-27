@@ -1,26 +1,17 @@
 import { TokenSet, Client } from 'openid-client';
-import { discoverClient } from './oidc';
 import querystring from 'querystring';
 import dayjs from 'dayjs';
 import chalk from 'chalk';
 
 export class BelgaSdk {
-    private wellKnownUri =
-        process.env.BELGA_OIDC_WELL_KNOWN_URI ||
-        'https://ssos.ssl.belga.be/auth/realms/belga/.well-known/openid-configuration';
-
-    private baseUri = process.env.BELGA_API_BASE_URI || 'https://bp-apis.ssl.belga.be/belgapress/api';
-
     private token?: null | TokenSet;
 
-    private client?: null | Client;
+    public constructor(private client: Client, private baseUri: string) {}
 
-    public constructor(private clientId: string, private clientSecret: string) {}
+    public async get<DataType = any>(baseEndpoint: string): Promise<DataType> {
+        await this.ensureToken();
 
-    public async get<DataType = any>(baseEndpoint: string) {
-        await this.ensureClient();
-
-        const response = await this.client!.requestResource(
+        const response = await this.client.requestResource(
             `${this.baseUri}${baseEndpoint}`,
             this.token!.access_token!,
             {
@@ -46,10 +37,10 @@ export class BelgaSdk {
         let retries = 0;
 
         do {
-            await this.ensureClient();
+            await this.ensureToken();
 
             try {
-                const response = await this.client!.requestResource(nextUri, this.token!.access_token!, {
+                const response = await this.client.requestResource(nextUri, this.token!.access_token!, {
                     method: 'GET',
                     body: '',
                     headers: {
@@ -73,17 +64,11 @@ export class BelgaSdk {
         } while (nextUri);
     }
 
-    private async initialize() {
-        this.client = await discoverClient(this.wellKnownUri, this.clientId, this.clientSecret);
-
-        this.token = await this.client.grant({
-            grant_type: 'client_credentials',
-        });
-    }
-
-    private async ensureClient() {
-        if (!this.client || !this.token) {
-            await this.initialize();
+    private async ensureToken() {
+        if (!this.token) {
+            this.token = await this.client.grant({
+                grant_type: 'client_credentials',
+            });
 
             return;
         }
