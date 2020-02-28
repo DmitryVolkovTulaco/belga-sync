@@ -1,6 +1,8 @@
+import PrezlySdk from '@prezly/sdk';
+import UploadClient from '@uploadcare/upload-client';
+import chalk from 'chalk';
 import { Args } from 'vorpal';
 import { BelgaSdk } from '../util/belga';
-import PrezlySdk from '@prezly/sdk';
 import { discoverClient } from '../util/oidc';
 import { BelgaImporter } from '../util/belga-importer';
 
@@ -9,6 +11,7 @@ export async function belgaImport(args: Args): Promise<void> {
     const belgaApiBaseUri = process.env.BELGA_API_BASE_URI!;
     const belgaBoardUuid = args.belga_board_uuid;
     const prezlyNewsroomId = parseInt(args.prezly_newsroom_id);
+    const belgaOffset = parseInt(args.belga_offset || '0');
     const prezlyAccessToken = args.prezly_access_token;
     const prezlyApiBaseUri = process.env.PREZLY_API_BASE_URI;
 
@@ -19,10 +22,22 @@ export async function belgaImport(args: Args): Promise<void> {
         accessToken: prezlyAccessToken,
         baseUrl: prezlyApiBaseUri,
     });
+    const uploadCare = new UploadClient({
+        publicKey: process.env.UPLOADCARE_PUBLIC_KEY,
+        baseCDN: process.env.UPLOADCARE_BASE_CDN_URI,
+    });
 
-    const belgaImport = new BelgaImporter(belga, prezly);
+    const belgaImport = new BelgaImporter(belga, prezly, uploadCare);
 
-    await belgaImport.importNewsObjects(belgaBoardUuid, prezlyNewsroomId);
+    try {
+        await belgaImport.importNewsObjects(belgaBoardUuid, prezlyNewsroomId, belgaOffset);
+    } catch (error) {
+        if (error.status >= 400) {
+            console.log(chalk.red(JSON.stringify(error, null, 4)));
+        } else {
+            console.log(error);
+        }
+    }
 }
 
 declare module 'vorpal/index' {
@@ -32,5 +47,6 @@ declare module 'vorpal/index' {
         belga_board_uuid: string;
         prezly_access_token: string;
         prezly_newsroom_id: string;
+        belga_offset: string;
     }
 }

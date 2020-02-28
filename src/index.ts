@@ -9,7 +9,7 @@ const vorpal = new Vorpal();
 
 vorpal
     .command(
-        'import <belga_client_id> <belga_client_secret> <belga_board_uuid> <prezly_access_token> [prezly_newsroom_id]',
+        'import <belga_client_id> <belga_client_secret> <belga_board_uuid> <prezly_access_token> [prezly_newsroom_id] [belga_offset]',
     )
     .action(belgaImport);
 

@@ -2,6 +2,7 @@ import { TokenSet, Client } from 'openid-client';
 import querystring from 'querystring';
 import dayjs from 'dayjs';
 import chalk from 'chalk';
+import { retry } from './retry';
 
 export class BelgaSdk {
     private token?: null | TokenSet;
@@ -34,33 +35,32 @@ export class BelgaSdk {
         const queryString = querystring.encode(query);
 
         let nextUri: string = `${this.baseUri}${baseEndpoint}?${queryString}`;
-        let retries = 0;
 
         do {
+            console.log(chalk.whiteBright(`Currently on: ${nextUri}`));
+
             await this.ensureToken();
 
-            try {
-                const response = await this.client.requestResource(nextUri, this.token!.access_token!, {
+            const response = await retry(3, () =>
+                this.client.requestResource(nextUri, this.token!.access_token!, {
                     method: 'GET',
                     body: '',
                     headers: {
                         'X-Belga-Context': 'SEARCH',
                     },
-                });
+                }),
+            );
 
-                const data = JSON.parse(response.body.toString());
-                nextUri = data!._links.next;
+            if (response.statusCode >= 400) {
+                const responseJson = JSON.stringify(JSON.parse(response.body.toString()), null, 4);
 
-                await callback(data!);
-
-                retries = 0;
-            } catch (error) {
-                ++retries;
-
-                if (retries >= 3) {
-                    throw error;
-                }
+                throw new Error(`Error response from Belga: \n ${responseJson}`);
             }
+
+            const data = JSON.parse(response.body.toString());
+            nextUri = data._links?.next;
+
+            await callback(data);
         } while (nextUri);
     }
 
@@ -106,15 +106,25 @@ const enum BelgaMediumType {
     Website = 'WEBSITE',
 }
 
-const enum BelgaMediumTypeGroup {
+export const enum BelgaMediumTypeGroup {
+    Print = 'PRINT',
     Online = 'ONLINE',
+    Social = 'SOCIAL',
+    Multimedia = 'MULTIMEDIA',
 }
 
-const enum BelgaAttachmentType {
+export const enum BelgaAttachmentType {
+    Page = 'Page',
     Webpage = 'Webpage',
 }
 
-interface BelgaAttachment {
+export interface BelgaAttachmentReference {
+    mimeType: string;
+    representation: 'ORIGINAL' | 'DETAIL' | 'LARGE' | 'SMALL';
+    href: string;
+}
+
+export interface BelgaAttachment {
     title: null | string;
     type: BelgaAttachmentType;
     date: string;
@@ -122,11 +132,7 @@ interface BelgaAttachment {
     from: number;
     to: number;
     duration: number;
-    references: {
-        mimeType: 'NOT_SPECIFIED';
-        representation: 'ORIGINAL';
-        href: string;
-    }[];
+    references: BelgaAttachmentReference[];
 }
 
 // todo: Ensure non-nullable fields are in fact non-nullable.
