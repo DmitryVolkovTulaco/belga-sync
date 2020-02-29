@@ -41,7 +41,7 @@ export class BelgaSdk {
 
             await this.ensureToken();
 
-            const response = await retry(3, () =>
+            const response = await retry(5, () =>
                 this.client.requestResource(nextUri, this.token!.access_token!, {
                     method: 'GET',
                     body: '',

@@ -74,6 +74,13 @@ export class BelgaImporter {
 
                     console.log(chalk.greenBright(`Belga news object ${newsObjectUuid} (${newsObject.title}) synced!`));
                 } catch (error) {
+                    if (error.status === 500 && error.payload.message === 'Undefined property: stdClass::$uuid') {
+                        console.log(
+                            chalk.yellow(
+                                `Coverage for news object ${newsObjectUuid} was created, but the server may have failed to create a thumbnail.`,
+                            ),
+                        );
+                    }
                     if (error.status === 500) {
                         console.log(chalk.red(JSON.stringify(error, null, 4)));
                     }
@@ -101,9 +108,9 @@ export class BelgaImporter {
             case BelgaMediumTypeGroup.Social:
                 return this.belgaSocialNewsObjectToCoverage(newsObject);
             case BelgaMediumTypeGroup.Online:
-                return await this.belgaOnlineNewsObjectToCoverage();
+                return await this.belgaOnlineNewsObjectToCoverage(newsObject);
             case BelgaMediumTypeGroup.Multimedia:
-                return await this.belgaMultimediaNewsObjectToCoverage();
+                return await this.belgaMultimediaNewsObjectToCoverage(newsObject);
             default:
                 return null;
         }
@@ -159,12 +166,43 @@ export class BelgaImporter {
         return coverage;
     }
 
-    private belgaOnlineNewsObjectToCoverage(): null | CoverageCreateRequest {
-        return null;
+    private belgaOnlineNewsObjectToCoverage(newsObject: BelgaNewsObject): null | CoverageCreateRequest {
+        const coverage: CoverageCreateRequest = {
+            external_reference_id: newsObject.uuid,
+            published_at: dayjs(newsObject.publishDate).toISOString(),
+            organisation: newsObject.source || newsObject.subSource,
+            note_content: { text: _.startCase(newsObject.mediumType.toLowerCase()) },
+        };
+
+        const url: BelgaAttachmentReference = _.chain(newsObject.attachments)
+            .filter({ type: BelgaAttachmentType.Webpage })
+            .flatMap('references')
+            .filter('href')
+            .orderBy((reference) => {
+                const position = ['ORIGINAL'].indexOf(reference.representation);
+
+                return position === -1 ? 0 : position;
+            }, 'asc')
+            .first()
+            .value();
+
+        if (url) {
+            coverage.url = url.href;
+        }
+
+        return coverage;
     }
 
-    private belgaMultimediaNewsObjectToCoverage(): null | CoverageCreateRequest {
-        return null;
+    private belgaMultimediaNewsObjectToCoverage(newsObject: BelgaNewsObject): null | CoverageCreateRequest {
+        const coverage: CoverageCreateRequest = {
+            external_reference_id: newsObject.uuid,
+            published_at: dayjs(newsObject.publishDate).toISOString(),
+            organisation: newsObject.source || newsObject.subSource,
+            note_content: { text: _.startCase(newsObject.mediumType.toLowerCase()) },
+        };
+        console.log(chalk.blue(`Found a multimedia object! ${newsObject.uuid}`));
+        process.exit();
+        return coverage;
     }
 
     private async getBestAttachment(newsObject: BelgaNewsObject): Promise<null | string> {
@@ -184,10 +222,10 @@ export class BelgaImporter {
             .first()
             .value();
 
-        try {
-            const repairedMimeType = this.repairMimeType(bestReference);
-            const date = dayjs(newsObject.publishDate);
+        const repairedMimeType = this.repairMimeType(bestReference);
+        const date = dayjs(newsObject.publishDate);
 
+        try {
             return await this.uploadByUriForPrezly(
                 bestReference.href,
                 `${newsObject.subSource} - ${date.toString()}.${this.getExtensionForMimeType(repairedMimeType)}`,
