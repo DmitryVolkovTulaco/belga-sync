@@ -80,7 +80,10 @@ export class BelgaImporter {
                                 `Coverage for news object ${newsObjectUuid} was created, but the server may have failed to create a thumbnail.`,
                             ),
                         );
+
+                        return;
                     }
+
                     if (error.status === 500) {
                         console.log(chalk.red(JSON.stringify(error, null, 4)));
                     }
@@ -120,7 +123,7 @@ export class BelgaImporter {
         const coverage: CoverageCreateRequest = {
             external_reference_id: newsObject.uuid,
             published_at: dayjs(newsObject.publishDate).toISOString(),
-            organisation: newsObject.source || newsObject.subSource,
+            organisation: newsObject.source?.trim() || newsObject.subSource?.trim(),
             note_content: { text: _.startCase(newsObject.mediumType.toLowerCase()) },
         };
 
@@ -141,7 +144,7 @@ export class BelgaImporter {
         const coverage: CoverageCreateRequest = {
             external_reference_id: newsObject.uuid,
             published_at: dayjs(newsObject.publishDate).toISOString(),
-            organisation: newsObject.source || newsObject.subSource,
+            organisation: newsObject.source?.trim() || newsObject.subSource?.trim(),
             note_content: { text: _.startCase(newsObject.mediumType.toLowerCase()) },
         };
 
@@ -170,7 +173,7 @@ export class BelgaImporter {
         const coverage: CoverageCreateRequest = {
             external_reference_id: newsObject.uuid,
             published_at: dayjs(newsObject.publishDate).toISOString(),
-            organisation: newsObject.source || newsObject.subSource,
+            organisation: newsObject.source?.trim() || newsObject.subSource?.trim(),
             note_content: { text: _.startCase(newsObject.mediumType.toLowerCase()) },
         };
 
@@ -197,11 +200,26 @@ export class BelgaImporter {
         const coverage: CoverageCreateRequest = {
             external_reference_id: newsObject.uuid,
             published_at: dayjs(newsObject.publishDate).toISOString(),
-            organisation: newsObject.source || newsObject.subSource,
+            organisation: newsObject.source?.trim() || newsObject.subSource?.trim(),
             note_content: { text: _.startCase(newsObject.mediumType.toLowerCase()) },
         };
-        console.log(chalk.blue(`Found a multimedia object! ${newsObject.uuid}`));
-        process.exit();
+
+        const url: BelgaAttachmentReference = _.chain(newsObject.attachments)
+            .filter({ type: BelgaAttachmentType.Rtv })
+            .flatMap('references')
+            .filter('href')
+            .orderBy((reference) => {
+                const position = ['MD_PLAYER', 'STREAM', 'SMALL', 'MEDIUM'].indexOf(reference.representation);
+
+                return position === -1 ? 0 : position;
+            }, 'asc')
+            .first()
+            .value();
+
+        if (url) {
+            coverage.url = url.href;
+        }
+
         return coverage;
     }
 
@@ -286,6 +304,10 @@ export class BelgaImporter {
 
             case 'png':
                 return 'image/png';
+
+            case 'm3u':
+            case 'm3u8':
+                return 'audio/x-mpequrl';
 
             default:
                 console.log(chalk.yellow(`Unrecognized mime type: ${reference.mimeType}`));

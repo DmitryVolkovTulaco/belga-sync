@@ -117,6 +117,7 @@ export const enum BelgaAttachmentType {
     Page = 'Page',
     Webpage = 'Webpage',
     Twitter = 'Twitter',
+    Rtv = 'Rtv',
 }
 
 export interface BelgaAttachmentReference {
