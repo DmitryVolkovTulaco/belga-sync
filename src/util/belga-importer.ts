@@ -1,6 +1,5 @@
 import _ from 'lodash';
 import dayjs from 'dayjs';
-import path from 'path';
 import chalk from 'chalk';
 import UploadClient from '@uploadcare/upload-client';
 import PrezlySdk from '@prezly/sdk';
@@ -9,7 +8,6 @@ import {
     BelgaNewsObject,
     BelgaMediumTypeGroup,
     BelgaAttachmentType,
-    BelgaAttachment,
     BelgaAttachmentReference,
 } from '../util/belga';
 // todo: This can be cleaned up by exporting interfaces from `src/index.ts` and shipping .d.ts files in dist
@@ -30,36 +28,35 @@ export class BelgaImporter {
         await this.belga.chunk<BelgaNewsObject>('/newsobjects', query, async (chunk) => {
             await chunk.data.reduce(async (previous, newsObject) => {
                 await previous;
-                await this.syncBelgaNewsObjectToPrezlyCoverage(prezlyNewsroomId, newsObject);
+                await this.syncBelgaNewsObjectToPrezlyCoverage(prezlyNewsroomId, newsObject.uuid);
             }, new Promise((c) => c()));
-
-            // console.log(chalk.yellowBright(`Waiting for ${syncs.length} syncs to finish.`));
-
-            // await Promise.all(syncs);
         });
     }
 
-    private async syncBelgaNewsObjectToPrezlyCoverage(newsroomId: number, simpleNewsObject: BelgaNewsObject) {
-        const newsObjectUuid = simpleNewsObject.uuid;
-
+    private async syncBelgaNewsObjectToPrezlyCoverage(newsroomId: number, newsObjectUuid: string) {
         const existingCoverage = await retry(
             5,
             async () => await this.prezly.coverage.getByExternalReferenceId(newsObjectUuid),
         );
 
+        const newsObject: BelgaNewsObject = await retry(
+            3,
+            async () => await this.belga.get(`/newsobjects/${newsObjectUuid}`),
+        );
+
         if (existingCoverage) {
             console.log(
-                chalk.gray(`Belga news object ${newsObjectUuid} (${simpleNewsObject.title}) has already been synced.`),
+                chalk.gray(`Belga news object ${newsObjectUuid} (${newsObject.title}) has already been synced.`),
             );
 
             return;
         }
 
-        const newCoverage = await this.belgaNewsObjectToCoverage(simpleNewsObject);
+        const newCoverage = await this.belgaNewsObjectToCoverage(newsObject);
         if (!newCoverage) {
             console.log(
                 chalk.grey(
-                    `Belga news object ${newsObjectUuid} - ${simpleNewsObject.mediumTypeGroup} - ${simpleNewsObject.title} is not supported.`,
+                    `Belga news object ${newsObjectUuid} - ${newsObject.mediumTypeGroup} ${newsObject.mediumType} - ${newsObject.title} is not supported.`,
                 ),
             );
 
@@ -69,19 +66,19 @@ export class BelgaImporter {
         newCoverage.newsroom = newsroomId;
 
         try {
-            console.log(chalk.green(`Syncing Belga news object ${newsObjectUuid} (${simpleNewsObject.title}).`));
+            console.log(chalk.green(`Syncing Belga news object ${newsObjectUuid} (${newsObject.title}).`));
 
             await retry(5, async () => {
                 try {
                     await this.prezly.coverage.create(newCoverage);
 
-                    console.log(
-                        chalk.greenBright(`Belga news object ${newsObjectUuid} (${simpleNewsObject.title}) synced!`),
-                    );
+                    console.log(chalk.greenBright(`Belga news object ${newsObjectUuid} (${newsObject.title}) synced!`));
                 } catch (error) {
                     if (error.status === 500) {
                         console.log(chalk.red(JSON.stringify(error, null, 4)));
                     }
+
+                    throw error;
                 }
             });
         } catch (error) {
@@ -102,7 +99,7 @@ export class BelgaImporter {
             case BelgaMediumTypeGroup.Print:
                 return await this.belgaPrintNewsObjectToCoverage(newsObject);
             case BelgaMediumTypeGroup.Social:
-                return await this.belgaSocialNewsObjectToCoverage();
+                return this.belgaSocialNewsObjectToCoverage(newsObject);
             case BelgaMediumTypeGroup.Online:
                 return await this.belgaOnlineNewsObjectToCoverage();
             case BelgaMediumTypeGroup.Multimedia:
@@ -116,17 +113,16 @@ export class BelgaImporter {
         const coverage: CoverageCreateRequest = {
             external_reference_id: newsObject.uuid,
             published_at: dayjs(newsObject.publishDate).toISOString(),
-            // note: There's also `sourceId`, `authors`, `authorIds`, `subsource` and `subsourceId`
-            organisation: newsObject.source,
+            organisation: newsObject.source || newsObject.subSource,
+            note_content: { text: _.startCase(newsObject.mediumType.toLowerCase()) },
         };
 
-        const content = newsObject.body || newsObject.lead || newsObject.title;
-        if (content) {
-            coverage.note_content = { text: content };
+        // note: We only support one author.
+        if (newsObject.authors.length) {
+            coverage.author = newsObject.authors[0];
         }
 
         const attachment = await this.getBestAttachment(newsObject);
-
         if (attachment) {
             coverage.attachment = attachment;
         }
@@ -134,8 +130,33 @@ export class BelgaImporter {
         return coverage;
     }
 
-    private belgaSocialNewsObjectToCoverage(): null | CoverageCreateRequest {
-        return null;
+    private belgaSocialNewsObjectToCoverage(newsObject: BelgaNewsObject): null | CoverageCreateRequest {
+        const coverage: CoverageCreateRequest = {
+            external_reference_id: newsObject.uuid,
+            published_at: dayjs(newsObject.publishDate).toISOString(),
+            organisation: newsObject.source || newsObject.subSource,
+            note_content: { text: _.startCase(newsObject.mediumType.toLowerCase()) },
+        };
+
+        const socialUrl: BelgaAttachmentReference = _.chain(newsObject.attachments)
+            .filter({ type: BelgaAttachmentType.Twitter })
+            .flatMap('references')
+            .filter('href')
+            .orderBy((reference) => {
+                const position = ['ORIGINAL'].indexOf(reference.representation);
+
+                return position === -1 ? 0 : position;
+            }, 'asc')
+            .first()
+            .value();
+
+        if (!socialUrl) {
+            return null;
+        }
+
+        coverage.url = socialUrl.href;
+
+        return coverage;
     }
 
     private belgaOnlineNewsObjectToCoverage(): null | CoverageCreateRequest {
@@ -165,10 +186,11 @@ export class BelgaImporter {
 
         try {
             const repairedMimeType = this.repairMimeType(bestReference);
+            const date = dayjs(newsObject.publishDate);
 
             return await this.uploadByUriForPrezly(
                 bestReference.href,
-                `${newsObject.uuid}.${this.getExtensionForMimeType(repairedMimeType)}`,
+                `${newsObject.subSource} - ${date.toString()}.${this.getExtensionForMimeType(repairedMimeType)}`,
                 repairedMimeType,
             );
         } catch (error) {
@@ -181,9 +203,13 @@ export class BelgaImporter {
     }
 
     private async uploadByUriForPrezly(uri: string, fileName: string, mimeType: string): Promise<null | string> {
-        const uploadedFile = await this.uploadCare.uploadFile(uri, {
-            publicKey: process.env.UPLOADCARE_PUBLIC_KEY!,
-        });
+        const uploadedFile = await retry(
+            3,
+            async () =>
+                await this.uploadCare.uploadFile(uri, {
+                    publicKey: process.env.UPLOADCARE_PUBLIC_KEY!,
+                }),
+        );
 
         return this.uploadcareFileToPrezlyFile(uploadedFile, fileName, mimeType);
     }
@@ -209,7 +235,7 @@ export class BelgaImporter {
     private repairMimeType(reference: BelgaAttachmentReference): string {
         // note: Sometimes their stored mime types aren't accurate.
         if (reference.href.match(/\:png\:/)?.length) {
-            return 'png';
+            return 'image/png';
         }
 
         switch (reference.mimeType.toLowerCase()) {
