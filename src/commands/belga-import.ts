@@ -1,6 +1,5 @@
 import PrezlySdk from '@prezly/sdk';
 import UploadClient from '@uploadcare/upload-client';
-import chalk from 'chalk';
 import log4js from 'log4js';
 import { Args } from 'vorpal';
 import { BelgaSdk } from '../util/belga';

@@ -13,6 +13,7 @@ import {
 } from '../util/belga';
 import { retry } from './retry';
 import { UploadcareFile } from '@uploadcare/upload-client/lib/tools/UploadcareFile';
+import { OEmbedInfo } from '@prezly/sdk/dist/Sdk/Coverage/types';
 
 export class BelgaImporter {
     public constructor(
@@ -181,13 +182,20 @@ export class BelgaImporter {
         const attachment = await this.getBestAttachment(newsObject);
         if (attachment) {
             coverage.attachment = attachment;
-            (coverage as any).attachment_oembed = {
+
+            const oembed: OEmbedInfo = {
+                version: '1.0',
                 title: newsObject.title,
                 description: newsObject.lead,
-                provider_name: newsObject.source,
                 type: 'link',
                 url: this.getBestReference(newsObject).href,
             };
+
+            if (newsObject.source) {
+                oembed.provider_name = newsObject.source;
+            }
+
+            coverage.attachment_oembed = oembed;
         }
 
         return coverage;
