@@ -33,15 +33,7 @@ export async function belgaImport(args: Args): Promise<void> {
 
     const belgaImport = new BelgaImporter(logger, belga, prezly, uploadCare);
 
-    try {
-        await belgaImport.importNewsObjects(belgaBoardUuid, prezlyNewsroomId, belgaOffset);
-    } catch (error) {
-        if (error.status >= 400) {
-            logger.error(chalk.red(JSON.stringify(error, null, 4)));
-        } else {
-            logger.error(error);
-        }
-    }
+    await belgaImport.importNewsObjects(belgaBoardUuid, prezlyNewsroomId, belgaOffset);
 }
 
 declare module 'vorpal/index' {

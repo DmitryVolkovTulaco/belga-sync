@@ -83,9 +83,22 @@ export class BelgaSdk {
     }
 
     // note: We're going to have tokens expire as we're using them (paginating long result sets).
-    private async refreshAccessToken() {
+    private async refreshAccessToken(): Promise<void> {
         if (this.client) {
-            this.token = await this.client.refresh(this.token!);
+            this.logger.info(chalk.white('Refreshing Belga access token.'));
+
+            try {
+                this.token = await this.client.refresh(this.token!);
+            } catch (error) {
+                this.logger.warn(chalk.yellow('There was an issue refreshing the Belga access token.'), [
+                    JSON.stringify(error, null, 4),
+                ]);
+
+                // note: If token renew fails, just nuke & pave it. 💥
+                this.token = null;
+
+                await this.ensureToken();
+            }
         }
 
         this.logger.info(chalk.yellow('Refreshed Belga access token!'));

@@ -84,13 +84,28 @@ export class BelgaImporter {
                             chalk.yellow(
                                 `Coverage for news object ${newsObjectUuid} was created, but the server may have failed to create a thumbnail.`,
                             ),
+                            [JSON.stringify({ newsObjectUuid }, null, 4)],
                         );
 
                         return;
                     }
 
                     if (error.status === 500) {
-                        this.logger.error(chalk.red(JSON.stringify(error, null, 4)));
+                        this.logger.error(chalk.red('Error creating coverage'), [JSON.stringify(error, null, 4)]);
+
+                        return;
+                    }
+
+                    if (error.status === 422) {
+                        this.logger.error(chalk.red('Error creating coverage'), [
+                            JSON.stringify(
+                                {
+                                    newsObjectUuid,
+                                },
+                                null,
+                                4,
+                            ),
+                        ]);
 
                         return;
                     }
@@ -100,11 +115,17 @@ export class BelgaImporter {
             });
         } catch (error) {
             if (!error.status) {
-                this.logger.error(chalk.yellow('Timeout trying to create coverage record.'));
+                this.logger.error(chalk.yellow(`Timeout trying to create coverage record for ${newsObjectUuid}.`), [
+                    JSON.stringify({ newsObjectUuid }, null, 4),
+                ]);
             }
 
             if (error.status === 409) {
-                this.logger.error(chalk.red(`Conflict! ${newsObjectUuid}`));
+                // note: This can often happen when a record is created successfully, but some subsequent server-side operation fails in the same request.
+                this.logger.error(
+                    chalk.red(`Conflict when attempting to create coverage record for ${newsObjectUuid}`),
+                    [JSON.stringify({ newsObjectUuid }, null, 4)],
+                );
             }
 
             throw error;
@@ -266,6 +287,7 @@ export class BelgaImporter {
         } catch (error) {
             this.logger.warn(
                 chalk.yellow(`Best attachment for ${newsObject.uuid} (${bestReference.href}) failed to download.`),
+                [JSON.stringify({ newsObjectUuid: newsObject.uuid })],
             );
 
             return null;
