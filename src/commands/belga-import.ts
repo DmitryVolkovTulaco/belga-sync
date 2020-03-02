@@ -1,6 +1,7 @@
 import PrezlySdk from '@prezly/sdk';
 import UploadClient from '@uploadcare/upload-client';
 import chalk from 'chalk';
+import log4js from 'log4js';
 import { Args } from 'vorpal';
 import { BelgaSdk } from '../util/belga';
 import { discoverClient } from '../util/oidc';
@@ -15,9 +16,12 @@ export async function belgaImport(args: Args): Promise<void> {
     const prezlyAccessToken = args.prezly_access_token;
     const prezlyApiBaseUri = process.env.PREZLY_API_BASE_URI;
 
+    const logger = log4js.getLogger();
+    logger.level = 'debug';
+
     const belgaClient = await discoverClient(belgaOidcWellKnownUri, args.belga_client_id, args.belga_client_secret);
 
-    const belga = new BelgaSdk(belgaClient, belgaApiBaseUri);
+    const belga = new BelgaSdk(logger, belgaClient, belgaApiBaseUri);
     const prezly = new PrezlySdk({
         accessToken: prezlyAccessToken,
         baseUrl: prezlyApiBaseUri,
@@ -27,15 +31,15 @@ export async function belgaImport(args: Args): Promise<void> {
         baseCDN: process.env.UPLOADCARE_BASE_CDN_URI,
     });
 
-    const belgaImport = new BelgaImporter(belga, prezly, uploadCare);
+    const belgaImport = new BelgaImporter(logger, belga, prezly, uploadCare);
 
     try {
         await belgaImport.importNewsObjects(belgaBoardUuid, prezlyNewsroomId, belgaOffset);
     } catch (error) {
         if (error.status >= 400) {
-            console.log(chalk.red(JSON.stringify(error, null, 4)));
+            logger.error(chalk.red(JSON.stringify(error, null, 4)));
         } else {
-            console.log(error);
+            logger.error(error);
         }
     }
 }

@@ -1,8 +1,9 @@
 import _ from 'lodash';
 import dayjs from 'dayjs';
 import chalk from 'chalk';
+import log4js from 'log4js';
 import UploadClient from '@uploadcare/upload-client';
-import PrezlySdk from '@prezly/sdk';
+import PrezlySdk, { CoverageCreateRequest } from '@prezly/sdk';
 import {
     BelgaSdk,
     BelgaNewsObject,
@@ -10,13 +11,16 @@ import {
     BelgaAttachmentType,
     BelgaAttachmentReference,
 } from '../util/belga';
-// todo: This can be cleaned up by exporting interfaces from `src/index.ts` and shipping .d.ts files in dist
-import { CoverageCreateRequest } from '@prezly/sdk/dist/Sdk/Coverage/types';
 import { retry } from './retry';
 import { UploadcareFile } from '@uploadcare/upload-client/lib/tools/UploadcareFile';
 
 export class BelgaImporter {
-    public constructor(private belga: BelgaSdk, private prezly: PrezlySdk, private uploadCare: UploadClient) {}
+    public constructor(
+        private logger: log4js.Logger,
+        private belga: BelgaSdk,
+        private prezly: PrezlySdk,
+        private uploadCare: UploadClient,
+    ) {}
 
     public async importNewsObjects(belgaBoardUuid: string, prezlyNewsroomId: number, offset = 0) {
         const query = {
@@ -39,13 +43,12 @@ export class BelgaImporter {
             async () => await this.prezly.coverage.getByExternalReferenceId(newsObjectUuid),
         );
 
-        const newsObject: BelgaNewsObject = await retry(
-            3,
-            async () => await this.belga.get(`/newsobjects/${newsObjectUuid}`),
+        const newsObject: BelgaNewsObject = this.cleanNewsObject(
+            await retry(3, async () => await this.belga.get(`/newsobjects/${newsObjectUuid}`)),
         );
 
         if (existingCoverage) {
-            console.log(
+            this.logger.info(
                 chalk.gray(`Belga news object ${newsObjectUuid} (${newsObject.title}) has already been synced.`),
             );
 
@@ -54,7 +57,7 @@ export class BelgaImporter {
 
         const newCoverage = await this.belgaNewsObjectToCoverage(newsObject);
         if (!newCoverage) {
-            console.log(
+            this.logger.info(
                 chalk.grey(
                     `Belga news object ${newsObjectUuid} - ${newsObject.mediumTypeGroup} ${newsObject.mediumType} - ${newsObject.title} is not supported.`,
                 ),
@@ -66,16 +69,18 @@ export class BelgaImporter {
         newCoverage.newsroom = newsroomId;
 
         try {
-            console.log(chalk.green(`Syncing Belga news object ${newsObjectUuid} (${newsObject.title}).`));
+            this.logger.info(chalk.green(`Syncing Belga news object ${newsObjectUuid} (${newsObject.title}).`));
 
             await retry(5, async () => {
                 try {
                     await this.prezly.coverage.create(newCoverage);
 
-                    console.log(chalk.greenBright(`Belga news object ${newsObjectUuid} (${newsObject.title}) synced!`));
+                    this.logger.info(
+                        chalk.greenBright(`Belga news object ${newsObjectUuid} (${newsObject.title}) synced!`),
+                    );
                 } catch (error) {
                     if (error.status === 500 && error.payload.message === 'Undefined property: stdClass::$uuid') {
-                        console.log(
+                        this.logger.warn(
                             chalk.yellow(
                                 `Coverage for news object ${newsObjectUuid} was created, but the server may have failed to create a thumbnail.`,
                             ),
@@ -85,7 +90,9 @@ export class BelgaImporter {
                     }
 
                     if (error.status === 500) {
-                        console.log(chalk.red(JSON.stringify(error, null, 4)));
+                        this.logger.error(chalk.red(JSON.stringify(error, null, 4)));
+
+                        return;
                     }
 
                     throw error;
@@ -93,15 +100,22 @@ export class BelgaImporter {
             });
         } catch (error) {
             if (!error.status) {
-                console.log(chalk.yellow('Timeout trying to create coverage record.'));
+                this.logger.error(chalk.yellow('Timeout trying to create coverage record.'));
             }
 
             if (error.status === 409) {
-                console.log(chalk.red(`Conflict! ${newsObjectUuid}`));
+                this.logger.error(chalk.red(`Conflict! ${newsObjectUuid}`));
             }
 
             throw error;
         }
+    }
+
+    private cleanNewsObject(newsObject: BelgaNewsObject) {
+        return {
+            ...newsObject,
+            title: newsObject.title.replace(/\n/, ''),
+        };
     }
 
     private async belgaNewsObjectToCoverage(newsObject: BelgaNewsObject): Promise<null | CoverageCreateRequest> {
@@ -250,7 +264,7 @@ export class BelgaImporter {
                 repairedMimeType,
             );
         } catch (error) {
-            console.log(
+            this.logger.warn(
                 chalk.yellow(`Best attachment for ${newsObject.uuid} (${bestReference.href}) failed to download.`),
             );
 
@@ -310,7 +324,7 @@ export class BelgaImporter {
                 return 'audio/x-mpequrl';
 
             default:
-                console.log(chalk.yellow(`Unrecognized mime type: ${reference.mimeType}`));
+                this.logger.warn(chalk.yellow(`Unrecognized mime type: ${reference.mimeType}`));
                 return reference.mimeType;
         }
     }

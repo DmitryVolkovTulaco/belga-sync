@@ -2,12 +2,13 @@ import { TokenSet, Client } from 'openid-client';
 import querystring from 'querystring';
 import dayjs from 'dayjs';
 import chalk from 'chalk';
+import log4js from 'log4js';
 import { retry } from './retry';
 
 export class BelgaSdk {
     private token?: null | TokenSet;
 
-    public constructor(private client: Client, private baseUri: string) {}
+    public constructor(private logger: log4js.Logger, private client: Client, private baseUri: string) {}
 
     public async get<DataType = any>(baseEndpoint: string): Promise<DataType> {
         await this.ensureToken();
@@ -37,11 +38,11 @@ export class BelgaSdk {
         let nextUri: string = `${this.baseUri}${baseEndpoint}?${queryString}`;
 
         do {
-            console.log(chalk.whiteBright(`Currently on: ${nextUri}`));
+            this.logger.info(chalk.whiteBright(`Currently on: ${nextUri}`));
 
             await this.ensureToken();
 
-            const response = await retry(5, () =>
+            const response = await retry(10, () =>
                 this.client.requestResource(nextUri, this.token!.access_token!, {
                     method: 'GET',
                     body: '',
@@ -87,7 +88,7 @@ export class BelgaSdk {
             this.token = await this.client.refresh(this.token!);
         }
 
-        console.log(chalk.yellow('Refreshed Belga access token!'));
+        this.logger.info(chalk.yellow('Refreshed Belga access token!'));
     }
 }
 

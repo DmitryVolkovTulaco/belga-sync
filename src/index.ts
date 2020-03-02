@@ -1,9 +1,29 @@
 import 'cross-fetch/polyfill';
+import log4js from 'log4js';
 import Vorpal from 'vorpal';
 import { belgaImport } from './commands/belga-import';
 import dotenv from 'dotenv';
+import sentryExporter from './util/sentry';
 
 dotenv.config();
+
+log4js.configure({
+    appenders: {
+        out: {
+            type: 'stdout',
+        },
+        sentry: {
+            type: sentryExporter,
+            dsn: process.env.SENTRY_DSN,
+        },
+    },
+    categories: {
+        default: {
+            appenders: ['out', 'sentry'],
+            level: 'debug',
+        },
+    },
+});
 
 const vorpal = new Vorpal();
 
