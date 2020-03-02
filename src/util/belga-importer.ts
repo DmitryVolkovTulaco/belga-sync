@@ -33,7 +33,7 @@ export class BelgaImporter {
             await chunk.data.reduce(async (previous, newsObject) => {
                 await previous;
                 await this.syncBelgaNewsObjectToPrezlyCoverage(prezlyNewsroomId, newsObject.uuid);
-            }, new Promise((c) => c()));
+            }, Promise.resolve());
         });
     }
 
@@ -69,7 +69,11 @@ export class BelgaImporter {
         newCoverage.newsroom = newsroomId;
 
         try {
-            this.logger.info(chalk.green(`Syncing Belga news object ${newsObjectUuid} (${newsObject.title}).`));
+            this.logger.info(
+                chalk.green(
+                    `Syncing Belga news object ${newsObjectUuid} - ${newsObject.mediumTypeGroup} ${newsObject.mediumType} - (${newsObject.title}).`,
+                ),
+            );
 
             await retry(5, async () => {
                 try {
@@ -97,10 +101,11 @@ export class BelgaImporter {
                     }
 
                     if (error.status === 422) {
-                        this.logger.error(chalk.red('Error creating coverage'), [
+                        this.logger.error(chalk.red('API rejected coverage data'), [
                             JSON.stringify(
                                 {
                                     newsObjectUuid,
+                                    error,
                                 },
                                 null,
                                 4,
@@ -160,7 +165,13 @@ export class BelgaImporter {
             published_at: dayjs(newsObject.publishDate).toISOString(),
             organisation: newsObject.source?.trim() || newsObject.subSource?.trim(),
             note_content: { text: _.startCase(newsObject.mediumType.toLowerCase()) },
+            headline: newsObject.title,
+            original_metadata_source: JSON.stringify(newsObject),
         };
+
+        if (newsObject.body) {
+            coverage.attachment_plaintext_content = newsObject.body;
+        }
 
         // note: We only support one author.
         if (newsObject.authors.length) {
@@ -170,6 +181,13 @@ export class BelgaImporter {
         const attachment = await this.getBestAttachment(newsObject);
         if (attachment) {
             coverage.attachment = attachment;
+            (coverage as any).attachment_oembed = {
+                title: newsObject.title,
+                description: newsObject.lead,
+                provider_name: newsObject.source,
+                type: 'link',
+                url: this.getBestReference(newsObject).href,
+            };
         }
 
         return coverage;
@@ -181,6 +199,8 @@ export class BelgaImporter {
             published_at: dayjs(newsObject.publishDate).toISOString(),
             organisation: newsObject.source?.trim() || newsObject.subSource?.trim(),
             note_content: { text: _.startCase(newsObject.mediumType.toLowerCase()) },
+            headline: newsObject.title,
+            original_metadata_source: JSON.stringify(newsObject),
         };
 
         const socialUrl: BelgaAttachmentReference = _.chain(newsObject.attachments)
@@ -210,6 +230,8 @@ export class BelgaImporter {
             published_at: dayjs(newsObject.publishDate).toISOString(),
             organisation: newsObject.source?.trim() || newsObject.subSource?.trim(),
             note_content: { text: _.startCase(newsObject.mediumType.toLowerCase()) },
+            headline: newsObject.title,
+            original_metadata_source: JSON.stringify(newsObject),
         };
 
         const url: BelgaAttachmentReference = _.chain(newsObject.attachments)
@@ -237,6 +259,8 @@ export class BelgaImporter {
             published_at: dayjs(newsObject.publishDate).toISOString(),
             organisation: newsObject.source?.trim() || newsObject.subSource?.trim(),
             note_content: { text: _.startCase(newsObject.mediumType.toLowerCase()) },
+            headline: newsObject.title,
+            original_metadata_source: JSON.stringify(newsObject),
         };
 
         const url: BelgaAttachmentReference = _.chain(newsObject.attachments)
@@ -258,12 +282,8 @@ export class BelgaImporter {
         return coverage;
     }
 
-    private async getBestAttachment(newsObject: BelgaNewsObject): Promise<null | string> {
-        if (_.isEmpty(newsObject.attachments)) {
-            return null;
-        }
-
-        const bestReference: BelgaAttachmentReference = _.chain(newsObject.attachments)
+    private getBestReference(newsObject: BelgaNewsObject): BelgaAttachmentReference {
+        return _.chain(newsObject.attachments)
             .filter({ type: BelgaAttachmentType.Page })
             .flatMap('references')
             .filter('href')
@@ -274,7 +294,14 @@ export class BelgaImporter {
             }, 'asc')
             .first()
             .value();
+    }
 
+    private async getBestAttachment(newsObject: BelgaNewsObject): Promise<null | string> {
+        if (_.isEmpty(newsObject.attachments)) {
+            return null;
+        }
+
+        const bestReference = this.getBestReference(newsObject);
         const repairedMimeType = this.repairMimeType(bestReference);
         const date = dayjs(newsObject.publishDate);
 
