@@ -7,3 +7,6 @@ README.md
 Dockerfile
 Jenkinsfile
 *.log
+*.tgz
+dist/
+node_modules/

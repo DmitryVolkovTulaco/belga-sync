@@ -12,13 +12,17 @@ export async function belgaImport(args: Args): Promise<void> {
     const belgaBoardUuid = args.belga_board_uuid;
     const prezlyNewsroomId = parseInt(args.prezly_newsroom_id);
     const belgaOffset = parseInt(args.belga_offset || '0');
-    const prezlyAccessToken = args.prezly_access_token;
+    const prezlyAccessToken = process.env.PREZLY_ACCESS_TOKEN;
     const prezlyApiBaseUri = process.env.PREZLY_API_BASE_URI;
 
     const logger = log4js.getLogger();
     logger.level = 'debug';
 
-    const belgaClient = await discoverClient(belgaOidcWellKnownUri, args.belga_client_id, args.belga_client_secret);
+    const belgaClient = await discoverClient(
+        belgaOidcWellKnownUri,
+        process.env.BELGA_CLIENT_ID,
+        process.env.BELGA_CLIENT_SECRET,
+    );
 
     const belga = new BelgaSdk(logger, belgaClient, belgaApiBaseUri);
     const prezly = new PrezlySdk({
@@ -37,10 +41,7 @@ export async function belgaImport(args: Args): Promise<void> {
 
 declare module 'vorpal/index' {
     interface Args {
-        belga_client_id: string;
-        belga_client_secret: string;
         belga_board_uuid: string;
-        prezly_access_token: string;
         prezly_newsroom_id: string;
         belga_offset: string;
     }

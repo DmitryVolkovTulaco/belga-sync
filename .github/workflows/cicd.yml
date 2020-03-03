@@ -1,0 +1,91 @@
+name: CI/CD
+on: push
+
+jobs:
+    build:
+        name: Build
+
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v2
+
+            - uses: actions/setup-node@v1
+
+            - name: Prepare Artifact Directory
+              run: mkdir artifacts
+
+            - name: Fetch tags for GitVersion
+              run: git fetch --tags --unshallow
+
+            - name: Fetch master for GitVersion
+              if: github.ref != 'refs/heads/master'
+              run: git branch --create-reflog master origin/master
+
+            - name: GitVersion
+              id: gitversion
+              uses: roryprimrose/rungitversion@v1.0.0
+
+            - name: NPM Version
+              run: npm version --no-git-tag-version ${{ steps.gitversion.outputs.FullSemVer }}
+
+            - name: Docker Build
+              run: |
+                  docker build . \
+                  --tag=prezly/belga-sync:${{ steps.gitversion.outputs.SemVer }}
+
+            - name: Save Docker Image
+              run: |
+                  docker save \
+                  prezly/belga-sync:${{ steps.gitversion.outputs.SemVer }} \
+                  | gzip -c \
+                  > artifacts/prezly-belga-sync-${{ steps.gitversion.outputs.SemVer }}.tgz
+
+            - name: Publish Metadata
+              run: |
+                  echo ${{ steps.gitversion.outputs.SemVer }} >> artifacts/version
+                  echo prezly-belga-sync-${{ steps.gitversion.outputs.FullSemVer }}.tgz >> artifacts/package
+
+            - uses: actions/upload-artifact@v1
+              if: github.ref == 'refs/heads/master'
+              with:
+                  name: build
+                  path: ./artifacts/
+    release:
+        name: Release
+        needs: build
+        runs-on: ubuntu-latest
+        if: github.ref == 'refs/heads/master'
+        steps:
+            - uses: actions/download-artifact@v1
+              with:
+                  name: build
+
+            - name: Load Metadata
+              run: |
+                  echo "::set-env name=VERSION::`cat ./build/version`"
+                  echo "::set-env name=PACKAGE::`cat ./build/package`"
+
+            - name: Load Docker Image
+              run: |
+                  gunzip -c ./build/prezly-belga-sync-${{ env.VERSION }}.tgz | docker load
+
+            - name: Publish Images to Amazon ECR
+              env:
+                  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+              run: |
+                  aws ecr get-login --region ${{ secrets.AWS_REGION }} --no-include-email | sh
+                  docker tag prezly/belga-sync:${{ env.VERSION }} ${{ secrets.AWS_ECR_REGISTRY }}/belga-sync:${{ env.VERSION }}
+                  docker push ${{ secrets.AWS_ECR_REGISTRY }}/belga-sync:${{ env.VERSION }}
+
+            - name: Create Release
+              id: create-release
+              uses: actions/create-release@v1
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  tag_name: ${{ env.VERSION }}
+                  release_name: ${{ env.VERSION }}
+                  draft: false
+                  prerelease: false
