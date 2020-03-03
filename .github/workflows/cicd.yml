@@ -54,7 +54,7 @@ jobs:
         name: Release
         needs: build
         runs-on: ubuntu-latest
-        if: github.ref == 'refs/heads/master'
+        # if: github.ref == 'refs/heads/master'
         steps:
             - uses: actions/download-artifact@v1
               with:
