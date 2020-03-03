@@ -37,7 +37,7 @@ jobs:
             - name: Save Docker Image
               run: |
                   docker save \
-                  prezly/belga-sync:${{ steps.gitversion.outputs.FullSemVer }} \
+                  prezly/belga-sync:${{ steps.gitversion.outputs.SemVer }} \
                   | gzip -c \
                   > artifacts/prezly-belga-sync-${{ steps.gitversion.outputs.SemVer }}.tgz
 
