@@ -141,7 +141,7 @@ export class BelgaImporter {
     private cleanNewsObject(newsObject: BelgaNewsObject) {
         return {
             ...newsObject,
-            title: newsObject.title.replace(/\n/, ''),
+            title: newsObject.title?.replace(/\n/, ''),
         };
     }
 
