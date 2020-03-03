@@ -1,5 +1,1 @@
 # Prezly Belga Sync
-
-```
-/
-```
