@@ -47,6 +47,7 @@ jobs:
                   echo prezly-belga-sync-${{ steps.gitversion.outputs.FullSemVer }}.tgz >> artifacts/package
 
             - uses: actions/upload-artifact@v1
+              if: github.ref == 'refs/heads/master'
               with:
                   name: build
                   path: ./artifacts/
