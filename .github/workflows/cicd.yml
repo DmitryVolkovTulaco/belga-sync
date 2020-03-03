@@ -58,7 +58,7 @@ jobs:
         steps:
             - uses: actions/download-artifact@v1
               with:
-              name: build
+                  name: build
 
             - name: Load Metadata
               run: |
