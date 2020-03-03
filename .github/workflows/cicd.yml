@@ -15,9 +15,6 @@ jobs:
             - name: Prepare Artifact Directory
               run: mkdir artifacts
 
-            - name: Lint
-              run: npm run lint
-
             - name: Fetch tags for GitVersion
               run: git fetch --tags --unshallow
 

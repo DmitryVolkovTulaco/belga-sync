@@ -10,6 +10,7 @@ RUN rm -rf node_modules/
 RUN rm -rf dist/
 RUN npm ci
 
+RUN npm run lint
 RUN npm run build
 
 FROM build AS dist
