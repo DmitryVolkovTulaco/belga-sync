@@ -70,7 +70,6 @@ jobs:
                   gunzip -c ./build/prezly-belga-sync-${{ env.VERSION }}.tgz | docker load
 
             - name: Publish Images to Amazon ECR
-              if: startsWith(github.ref, 'refs/tags/')
               env:
                   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
                   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
