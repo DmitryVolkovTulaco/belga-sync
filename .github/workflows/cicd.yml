@@ -32,14 +32,14 @@ jobs:
             - name: Docker Build
               run: |
                   docker build . \
-                  --tag=prezly/belga-sync:${{ steps.gitversion.outputs.FullSemVer }}
+                  --tag=prezly/belga-sync:${${{ steps.gitversion.outputs.FullSemVer }}/+/-}
 
             - name: Save Docker Image
               run: |
                   docker save \
                   prezly/belga-sync:${{ steps.gitversion.outputs.FullSemVer }} \
                   | gzip -c \
-                  > artifacts/prezly-belga-sync-${{ steps.gitversion.outputs.FullSemVer }}.tgz
+                  > artifacts/prezly-belga-sync-${${{ steps.gitversion.outputs.FullSemVer }}/+/-}.tgz
 
             - name: Publish Metadata
               run: |
