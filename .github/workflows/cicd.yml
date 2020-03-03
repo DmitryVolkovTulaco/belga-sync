@@ -75,6 +75,7 @@ jobs:
                   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
               run: |
                   aws ecr get-login --region ${{ secrets.AWS_REGION }} --no-include-email | sh
+                  docker tag prezly-belga-sync-${{ env.VERSION }} ${{ secrets.AWS_ECR_REGISTRY }}/belga-sync:${{ env.VERSION }}
                   docker push ${{ secrets.AWS_ECR_REGISTRY }}/belga-sync:${{ env.VERSION }}
 
             - name: Create Release
