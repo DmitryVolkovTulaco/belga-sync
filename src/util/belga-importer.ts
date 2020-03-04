@@ -44,8 +44,9 @@ export class BelgaImporter {
             async () => await this.prezly.coverage.getByExternalReferenceId(newsObjectUuid),
         );
 
+        this.logger.info(chalk.grey(`Getting full news object ${newsObjectUuid}.`));
         const newsObject: BelgaNewsObject = this.cleanNewsObject(
-            await retry(3, async () => await this.belga.get(`/newsobjects/${newsObjectUuid}`)),
+            await retry(10, async () => await this.belga.get(`/newsobjects/${newsObjectUuid}`)),
         );
 
         if (existingCoverage) {

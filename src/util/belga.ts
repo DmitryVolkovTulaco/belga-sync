@@ -40,7 +40,7 @@ export class BelgaSdk {
         do {
             this.logger.info(chalk.whiteBright(`Currently on: ${nextUri}`));
 
-            await this.ensureToken();
+            await retry(3, async () => await this.ensureToken());
 
             const response = await retry(10, () =>
                 this.client.requestResource(nextUri, this.token!.access_token!, {

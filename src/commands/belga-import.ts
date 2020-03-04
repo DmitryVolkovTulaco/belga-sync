@@ -12,16 +12,16 @@ export async function belgaImport(args: Args): Promise<void> {
     const belgaBoardUuid = args.belga_board_uuid;
     const prezlyNewsroomId = parseInt(args.prezly_newsroom_id);
     const belgaOffset = parseInt(args.belga_offset || '0');
-    const prezlyAccessToken = process.env.PREZLY_ACCESS_TOKEN;
-    const prezlyApiBaseUri = process.env.PREZLY_API_BASE_URI;
+    const prezlyAccessToken = process.env.PREZLY_ACCESS_TOKEN!;
+    const prezlyApiBaseUri = process.env.PREZLY_API_BASE_URI!;
 
     const logger = log4js.getLogger();
     logger.level = 'debug';
 
     const belgaClient = await discoverClient(
         belgaOidcWellKnownUri,
-        process.env.BELGA_CLIENT_ID,
-        process.env.BELGA_CLIENT_SECRET,
+        process.env.BELGA_CLIENT_ID!,
+        process.env.BELGA_CLIENT_SECRET!,
     );
 
     const belga = new BelgaSdk(logger, belgaClient, belgaApiBaseUri);
