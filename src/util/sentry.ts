@@ -37,6 +37,8 @@ function configure(config: Log4jsSentryConfiguration) {
 
 function log4jsLevelToSentrySeverity(level: log4js.Level): Sentry.Severity {
     switch (level.levelStr) {
+        case 'DEBUG':
+            return Sentry.Severity.Debug;
         case 'INFO':
             return Sentry.Severity.Info;
         case 'WARN':
