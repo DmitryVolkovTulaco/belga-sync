@@ -97,21 +97,18 @@ export class BelgaImporter {
                     }
 
                     if (error.status === 500) {
-                        this.logger.error(chalk.red('Error creating coverage'), [JSON.stringify(error, null, 4)]);
+                        this.logger.error(chalk.red('Error creating coverage'), [
+                            'Error ' + JSON.stringify(error, null, 4),
+                            'New coverage ' + JSON.stringify(newCoverage, null, 4),
+                        ]);
 
                         return;
                     }
 
                     if (error.status === 422) {
                         this.logger.error(chalk.red('API rejected coverage data'), [
-                            JSON.stringify(
-                                {
-                                    newsObjectUuid,
-                                    error,
-                                },
-                                null,
-                                4,
-                            ),
+                            'Belga news object' + JSON.stringify({ newsObjectUuid, error }, null, 4),
+                            'New coverage ' + JSON.stringify(newCoverage, null, 4),
                         ]);
 
                         return;
