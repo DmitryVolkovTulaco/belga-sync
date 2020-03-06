@@ -107,7 +107,7 @@ export class BelgaImporter {
 
                     if (error.status === 422) {
                         this.logger.error(chalk.red('API rejected coverage data'), [
-                            'Belga news object' + JSON.stringify({ newsObjectUuid, error }, null, 4),
+                            'Belga news object ' + JSON.stringify({ newsObjectUuid, error }, null, 4),
                             'New coverage ' + JSON.stringify(newCoverage, null, 4),
                         ]);
 
