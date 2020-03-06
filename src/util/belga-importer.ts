@@ -173,7 +173,7 @@ export class BelgaImporter {
         }
 
         // note: We only support one author.
-        if (newsObject.authors.length) {
+        if (newsObject.authors.length && newsObject.authors[0]!.trim()) {
             coverage.author = newsObject.authors[0];
         }
 
