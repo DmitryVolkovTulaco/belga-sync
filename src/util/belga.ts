@@ -170,7 +170,7 @@ export interface BelgaNewsObject {
     keywords: any[];
     page: number;
     language: string;
-    authors: any[];
+    authors: string[];
     attachments: BelgaAttachment[];
     wordCount: number;
     account: any;
