@@ -27,7 +27,7 @@ function configure(config: Log4jsSentryConfiguration) {
         };
 
         Sentry.captureEvent({
-            message: `Belga Import - ${extra.data[0]}`,
+            message: extra.data[0],
             environment: process.env.NODE_ENV,
             level: log4jsLevelToSentrySeverity(extra.level),
             extra,
