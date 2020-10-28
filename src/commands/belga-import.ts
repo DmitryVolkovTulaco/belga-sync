@@ -15,6 +15,14 @@ export async function belgaImport(args: Args): Promise<void> {
     const prezlyAccessToken = process.env.PREZLY_ACCESS_TOKEN!;
     const prezlyApiBaseUri = process.env.PREZLY_API_BASE_URI!;
 
+    let belgaStartDate = args.start_date;
+    if (!belgaStartDate) {
+        let startDate = new Date();
+        startDate.setDate(startDate.getDate() - 7);
+
+        belgaStartDate = startDate.toISOString().split('T')[0];
+    }
+
     const logger = log4js.getLogger();
     logger.level = 'debug';
 
@@ -36,7 +44,7 @@ export async function belgaImport(args: Args): Promise<void> {
 
     const belgaImport = new BelgaImporter(logger, belga, prezly, uploadCare);
 
-    await belgaImport.importNewsObjects(belgaBoardUuid, prezlyNewsroomId, belgaOffset);
+    await belgaImport.importNewsObjects(belgaBoardUuid, prezlyNewsroomId, belgaStartDate, belgaOffset);
 }
 
 declare module 'vorpal/index' {
@@ -44,5 +52,6 @@ declare module 'vorpal/index' {
         belga_board_uuid: string;
         prezly_newsroom_id: string;
         belga_offset: string;
+        start_date: string;
     }
 }

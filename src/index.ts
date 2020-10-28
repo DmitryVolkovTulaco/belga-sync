@@ -29,8 +29,7 @@ const logger = log4js.getLogger();
 
 const vorpal = new Vorpal();
 
-vorpal.command('import <belga_board_uuid> <prezly_newsroom_id> [belga_offset]').action(wrapCommand(belgaImport));
-
+vorpal.command('import <belga_board_uuid> <prezly_newsroom_id> [start_date] [belga_offset]').action(wrapCommand(belgaImport));
 vorpal.parse(process.argv);
 
 function wrapCommand<ArgsType extends Args>(command: (args: ArgsType) => Promise<any>) {
@@ -42,3 +41,4 @@ function wrapCommand<ArgsType extends Args>(command: (args: ArgsType) => Promise
         }
     };
 }
+
