@@ -23,10 +23,11 @@ export class BelgaImporter {
         private uploadCare: UploadClient,
     ) {}
 
-    public async importNewsObjects(belgaBoardUuid: string, prezlyNewsroomId: number, offset = 0) {
+    public async importNewsObjects(belgaBoardUuid: string, prezlyNewsroomId: number, start: string, offset = 0) {
         const query = {
             board: belgaBoardUuid,
             order: '-publishDate',
+            start, //default is 7 days
             offset,
         };
 
@@ -332,6 +333,7 @@ export class BelgaImporter {
             3,
             async () =>
                 await this.uploadCare.uploadFile(uri, {
+                    store: process.env.NODE_ENV === 'production',
                     publicKey: process.env.UPLOADCARE_PUBLIC_KEY!,
                 }),
         );
