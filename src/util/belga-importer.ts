@@ -24,10 +24,16 @@ export class BelgaImporter {
     ) {}
 
     public async importNewsObjects(belgaBoardUuid: string, prezlyNewsroomId: number, start: string, offset = 0) {
+        console.log(start);
         const query = {
             board: belgaBoardUuid,
-            order: '-publishDate',
-            start, //default is 7 days
+            order: 'publishDate',
+            start,
+            //start, //default is 7 days
+            //end: '2019-12-01',
+            //start: '2020-10-02',
+            //end: '2020-10-03',
+            count: 50,
             offset,
         };
 
@@ -40,25 +46,30 @@ export class BelgaImporter {
     }
 
     private async syncBelgaNewsObjectToPrezlyCoverage(newsroomId: number, newsObjectUuid: string) {
+
+        this.logger.info(
+            chalk.gray(`Search for records with same external_id`),
+        );
+
         const existingCoverage = await retry(
-            5,
+            2,
             async () => await this.prezly.coverage.getByExternalReferenceId(newsObjectUuid),
         );
+
+        if (existingCoverage) {
+            this.logger.info(
+                chalk.gray(`Belga news object ${newsObjectUuid} has already been synced. Skipping`),
+            );
+
+            return;
+        }
 
         this.logger.info(chalk.grey(`Getting full news object ${newsObjectUuid}.`));
         const newsObject: BelgaNewsObject = this.cleanNewsObject(
             await retry(10, async () => await this.belga.get(`/newsobjects/${newsObjectUuid}`)),
         );
 
-        if (existingCoverage) {
-            this.logger.info(
-                chalk.gray(`Belga news object ${newsObjectUuid} (${newsObject.title}) has already been synced.`),
-            );
-
-            return;
-        }
-
-        const newCoverage = await this.belgaNewsObjectToCoverage(newsObject);
+        let newCoverage = await this.belgaNewsObjectToCoverage(newsObject);
         if (!newCoverage) {
             this.logger.info(
                 chalk.grey(
@@ -71,58 +82,127 @@ export class BelgaImporter {
 
         newCoverage.newsroom = newsroomId;
 
-        try {
+        // search for the same item already synced from staging
+        let query: any;
+
+        // probably here I need to check if it was made by the integration (and not in interface/manually)
+        query = {
+            "url": newCoverage.url,
+            "newsroom.id": { '$in': { newsroomId }},
+            "external_reference_id": { '$ne' : newsObject.uuid }
+        };
+        if (newsObject.mediumTypeGroup === BelgaMediumTypeGroup.Print) {
+            let publishedDate = newCoverage.published_at ? newCoverage.published_at.split('T')[0] : "";
+            query = {
+                "$and": [
+                    { "headline": newCoverage.headline?.trim },
+                    { "published_at": {"$ge": publishedDate + " 00:00:00"} },
+                    { "published_at": {"$le": publishedDate + " 23:59:59"} },
+                    { "newsroom.id": {'$in': [ newsroomId ]} },
+                    { "external_reference_id": {"$ne": newsObject.uuid }}
+                ]
+            };
+        }
+
+        // console.log(query);
+        // console.log(JSON.stringify(query));
+
+        const CoverageItemCollectionSyncedFromStaging = await retry(
+            2,
+            async () => await this.prezly.coverage.list({
+                includeDeleted: true,
+                pageSize: 1,
+                jsonQuery: JSON.stringify(query),
+            }),
+        );
+
+        this.logger.info(
+            chalk.yellowBright(`Found #${CoverageItemCollectionSyncedFromStaging.coverage.length} items that look the same from staging data`),
+        );
+
+        const CoverageItemSyncedFromStaging = CoverageItemCollectionSyncedFromStaging.coverage[0] ?? null;
+        if (CoverageItemSyncedFromStaging) {
+
             this.logger.info(
-                chalk.green(
-                    `Syncing Belga news object ${newsObjectUuid} - ${newsObject.mediumTypeGroup} ${newsObject.mediumType} - (${newsObject.title}).`,
-                ),
+                chalk.yellowBright(`Copying newsitem #${CoverageItemSyncedFromStaging.id} into new one`),
             );
 
-            await retry(5, async () => {
-                try {
-                    await this.prezly.coverage.create(newCoverage);
+            const { author_contact, organisation_contact, newsroom, story, published_at, note_content_json } = CoverageItemSyncedFromStaging;
 
+            // merge everything in from old newsobject
+            newCoverage = {
+                ...newCoverage,
+                external_reference_id: newsObject.uuid,
+                author: author_contact?.id,
+                organisation: organisation_contact?.id,
+                newsroom: newsroom?.id,
+                story: story?.id,
+                published_at,
+                note_content: note_content_json
+            }
+        }
+
+        this.logger.info(
+            chalk.green(
+                `Syncing Belga news object ${newsObjectUuid} - ${newsObject.mediumTypeGroup} ${newsObject.mediumType} - (${newsObject.title}).`,
+            ),
+        );
+
+        try {
+            if (newCoverage) {
+                const createdCoverage = await retry(
+                    2,
+                    async () => await this.prezly.coverage.create(<CoverageCreateRequest>newCoverage),
+                );
+
+                this.logger.info(
+                    chalk.greenBright(`Belga news object ${newsObjectUuid} (${newsObject.title}) synced!`),
+                );
+
+                if (CoverageItemSyncedFromStaging && !CoverageItemSyncedFromStaging.is_deleted) {
                     this.logger.info(
-                        chalk.greenBright(`Belga news object ${newsObjectUuid} (${newsObject.title}) synced!`),
+                        chalk.yellowBright(`Remove previous staging coverage item ${CoverageItemSyncedFromStaging.id}`),
                     );
-                } catch (error) {
-                    if (error.status === 500 && error.payload.message === 'Undefined property: stdClass::$uuid') {
-                        this.logger.warn(
-                            chalk.yellow(
-                                `Coverage for news object ${newsObjectUuid} was created, but the server may have failed to create a thumbnail.`,
-                            ),
-                            [JSON.stringify({ newsObjectUuid }, null, 4)],
-                        );
 
-                        return;
-                    }
-
-                    if (error.status === 500) {
-                        this.logger.error(chalk.red('Error creating coverage'), [
-                            'Error ' + JSON.stringify(error, null, 4),
-                            'New coverage ' + JSON.stringify(newCoverage, null, 4),
-                        ]);
-
-                        return;
-                    }
-
-                    if (error.status === 422) {
-                        this.logger.error(chalk.red('API rejected coverage data'), [
-                            'Belga news object ' + JSON.stringify({ newsObjectUuid, error }, null, 4),
-                            'New coverage ' + JSON.stringify(newCoverage, null, 4),
-                        ]);
-
-                        return;
-                    }
-
-                    throw error;
+                    await this.prezly.coverage.remove(CoverageItemSyncedFromStaging.id);
                 }
-            });
+
+                if (CoverageItemSyncedFromStaging && CoverageItemSyncedFromStaging.is_deleted) {
+                    this.logger.info(
+                        chalk.yellowBright(`Staging item #${CoverageItemSyncedFromStaging.id} was deleted, so marking the new as deleted too`),
+                    );
+
+                    await this.prezly.coverage.remove(createdCoverage.id);
+                }
+            }
         } catch (error) {
-            if (!error.status) {
-                this.logger.error(chalk.yellow(`Timeout trying to create coverage record for ${newsObjectUuid}.`), [
-                    JSON.stringify({ newsObjectUuid }, null, 4),
+            if (error.status === 500 && error.payload.message === 'Undefined property: stdClass::$uuid') {
+                this.logger.warn(
+                    chalk.yellow(
+                        `Coverage for news object ${newsObjectUuid} was created, but the server may have failed to create a thumbnail.`,
+                    ),
+                    [JSON.stringify({ newsObjectUuid }, null, 4)],
+                );
+
+                return;
+            }
+
+            if (error.status === 500) {
+                this.logger.error(chalk.red('Error creating coverage'), [
+                    'Error ' + JSON.stringify(error, null, 4),
+                    'New coverage ' + JSON.stringify(newCoverage, null, 4),
                 ]);
+
+                return;
+            }
+
+            if (error.status === 422) {
+                this.logger.error(chalk.red('API rejected coverage data'), [
+                    'Belga news object ' + JSON.stringify({ newsObjectUuid, error }, null, 4),
+                    'New coverage ' + JSON.stringify(newCoverage, null, 4),
+                ]);
+
+                return;
             }
 
             if (error.status === 409) {
@@ -131,6 +211,21 @@ export class BelgaImporter {
                     chalk.red(`Conflict when attempting to create coverage record for ${newsObjectUuid}`),
                     [JSON.stringify({ newsObjectUuid }, null, 4)],
                 );
+
+                return;
+            }
+
+            if (!error.status) {
+                this.logger.error(chalk.yellow(`Timeout trying to create coverage record for ${newsObjectUuid}.`), [
+                    JSON.stringify({ newsObjectUuid }, null, 4),
+                ]);
+
+                // eat all errors
+                this.logger.error(
+                    chalk.red(error),
+                );
+
+                return;
             }
 
             throw error;
@@ -147,13 +242,13 @@ export class BelgaImporter {
     private async belgaNewsObjectToCoverage(newsObject: BelgaNewsObject): Promise<null | CoverageCreateRequest> {
         switch (newsObject.mediumTypeGroup) {
             case BelgaMediumTypeGroup.Print:
-                return await this.belgaPrintNewsObjectToCoverage(newsObject);
+                return this.belgaPrintNewsObjectToCoverage(newsObject);
             case BelgaMediumTypeGroup.Social:
                 return this.belgaSocialNewsObjectToCoverage(newsObject);
             case BelgaMediumTypeGroup.Online:
-                return await this.belgaOnlineNewsObjectToCoverage(newsObject);
+                return this.belgaOnlineNewsObjectToCoverage(newsObject);
             case BelgaMediumTypeGroup.Multimedia:
-                return await this.belgaMultimediaNewsObjectToCoverage(newsObject);
+                return this.belgaMultimediaNewsObjectToCoverage(newsObject);
             default:
                 return null;
         }
@@ -333,7 +428,7 @@ export class BelgaImporter {
             3,
             async () =>
                 await this.uploadCare.uploadFile(uri, {
-                    store: process.env.NODE_ENV === 'production',
+                    //store: process.env.NODE_ENV === 'production',
                     publicKey: process.env.UPLOADCARE_PUBLIC_KEY!,
                 }),
         );
